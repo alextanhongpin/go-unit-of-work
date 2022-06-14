@@ -31,6 +31,10 @@ func main() {
 	if err := doWork(tx); err != nil {
 		panic(err)
 	}
+
+	if err := uowFactory().AtomicFn(doWork2); err != nil {
+		panic(err)
+	}
 }
 
 func doWork(db *uow.UnitOfWork) error {
@@ -53,6 +57,20 @@ func doWork(db *uow.UnitOfWork) error {
 	if err := db.Commit(); err != nil {
 		return fmt.Errorf("failed to commit: %w", err)
 	}
+
+	return nil
+}
+
+func doWork2(db *uow.UnitOfWork) error {
+	fmt.Println("isTx?", db.IsTx())
+
+	ctx := context.Background()
+
+	var n int
+	if err := db.QueryRowContext(ctx, `select 1 + 1`).Scan(&n); err != nil {
+		return fmt.Errorf("failed to query: %w", err)
+	}
+	fmt.Println("result:", n)
 
 	return nil
 }

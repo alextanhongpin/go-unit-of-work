@@ -105,3 +105,21 @@ func (uow *UnitOfWork) Rollback() (err error) {
 
 	return
 }
+
+func (uow *UnitOfWork) AtomicFn(fn func(uow *UnitOfWork) error) (err error) {
+	if uow.IsTx() {
+		return ErrNestedTransaction
+	}
+
+	db, err := uow.Atomic()
+	if err != nil {
+		return err
+	}
+	defer db.Rollback()
+
+	if err := fn(db); err != nil {
+		return err
+	}
+
+	return db.Commit()
+}
