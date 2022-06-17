@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	"github.com/alextanhongpin/go-unit-of-work/pkg/uow"
 	_ "github.com/lib/pq"
@@ -35,6 +37,43 @@ func main() {
 	if err := uowFactory().AtomicFn(doWork2); err != nil {
 		panic(err)
 	}
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+
+		fmt.Println("do atomic", 1)
+		if err := uowFactory().AtomicLock(context.Background(), 100, sleepAndWork); err != nil {
+			panic(err)
+		}
+		fmt.Println("done atomic", 1)
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		fmt.Println("do atomic", 2)
+		if err := uowFactory().AtomicLock(context.Background(), 100, sleepAndWork); err != nil {
+			panic(err)
+		}
+		fmt.Println("done atomic", 1)
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		fmt.Println("do try atomic", 3)
+		if err := uowFactory().AtomicTryLock(context.Background(), 100, sleepAndWork); err != nil {
+			fmt.Println("do try atomic failed", err)
+		} else {
+			fmt.Println("done do try atomic", 3)
+		}
+	}()
+
+	wg.Wait()
+	fmt.Println("done")
 }
 
 func doWork(db *uow.UnitOfWork) error {
@@ -63,6 +102,21 @@ func doWork(db *uow.UnitOfWork) error {
 
 func doWork2(db *uow.UnitOfWork) error {
 	fmt.Println("isTx?", db.IsTx())
+
+	ctx := context.Background()
+
+	var n int
+	if err := db.QueryRowContext(ctx, `select 1 + 1`).Scan(&n); err != nil {
+		return fmt.Errorf("failed to query: %w", err)
+	}
+	fmt.Println("result:", n)
+
+	return nil
+}
+
+func sleepAndWork(db *uow.UnitOfWork) error {
+	fmt.Println("isTx?", db.IsTx())
+	time.Sleep(5 * time.Second)
 
 	ctx := context.Background()
 

@@ -11,6 +11,7 @@ import (
 var (
 	ErrNestedTransaction = errors.New("uow: cannot nest transaction")
 	ErrUnknownDBType     = errors.New("uow: unknown db type")
+	ErrAlreadyLocked     = errors.New("uow: already locked")
 )
 
 type IDB interface {
@@ -122,4 +123,28 @@ func (uow *UnitOfWork) AtomicFn(fn func(uow *UnitOfWork) error) (err error) {
 	}
 
 	return db.Commit()
+}
+
+func (uow *UnitOfWork) AtomicLock(ctx context.Context, n int, fn func(uow *UnitOfWork) error) error {
+	return uow.AtomicFn(func(uow *UnitOfWork) error {
+		if _, err := uow.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, n); err != nil {
+			return err
+		}
+
+		return fn(uow)
+	})
+}
+
+func (uow *UnitOfWork) AtomicTryLock(ctx context.Context, n int, fn func(uow *UnitOfWork) error) error {
+	return uow.AtomicFn(func(uow *UnitOfWork) error {
+		var locked bool
+		if err := uow.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock($1)`, n).Scan(&locked); err != nil {
+			return err
+		}
+		if locked {
+			return fmt.Errorf("%w: %d", ErrAlreadyLocked, n)
+		}
+
+		return fn(uow)
+	})
 }
